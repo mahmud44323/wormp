@@ -5,7 +5,6 @@ import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 
-
 def create_database():
     conn = sqlite3.connect('interactions.db')
     c = conn.cursor()
@@ -16,6 +15,7 @@ def create_database():
                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     conn.commit()
     conn.close()
+
 def get_all_interactions():
     conn = sqlite3.connect('interactions.db')
     c = conn.cursor()
@@ -44,22 +44,23 @@ def view_interactions():
             print(f"Question: {interaction[1]}")
             print(f"Answer: {interaction[2]}")
             print(f"Timestamp: {interaction[3]}")
-            print(Fohire.BLUE + "-" * 40 + Style.RESET_ALL)
+            print(Fore.BLUE + "-" * 40 + Style.RESET_ALL)
 
 def get_api_key():
     return "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"
 
 def get_answer(api_key, question):
     openai.api_key = api_key
-    response = openai.Completion.create(
-        engine="gpt-3.5-turbo-instruct",
-        prompt=question,
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "user", "content": question}
+        ],
         temperature=0.7,
         max_tokens=4000,
-        n=1,
-        stop=["Human:", " AI:"]
+        n=1
     )
-    answer = response['choices'][0]['text'].strip()
+    answer = response['choices'][0]['message']['content'].strip()
     return answer
 
 def display_intro():
@@ -75,7 +76,6 @@ WormGPT V3.0 Ultimate developed and owned by Black Market Ⓡ
 
 Welcome to the WormGPT. The biggest enemy of the well-known ChatGPT, lets talk to me!
     """ + Style.RESET_ALL) 
-
 
 def find_last_question(history):
     for i in range(len(history) - 1, -1, -1):
@@ -125,21 +125,21 @@ def analyze_interactions():
 
     df = pd.DataFrame(interactions, columns=['id', 'question', 'answer', 'timestamp'])
 
-    # تحويل النصوص إلى متجهات من الأعداد الصحيحة باستخدام CountVectorizer
+    # Convert texts to vectors using CountVectorizer
     vectorizer = CountVectorizer()
     X = vectorizer.fit_transform(df['question'] + " " + df['answer'])
 
-    # تنفيذ نموذج LatentDirichletAllocation لتجزئة المتجهات إلى أنماط مخفية
-    num_topics = 5  # عدد الأنماط المخفية التي نرغب في اكتشافها
+    # Perform LatentDirichletAllocation model to discover hidden patterns
+    num_topics = 5  # Number of topics to discover
     lda_model = LatentDirichletAllocation(n_components=num_topics, random_state=42)
     lda_model.fit(X)
 
-    # عرض الأنماط المكتشفة وأكثر الكلمات تكرارًا في كل نمط
+    # Display discovered patterns and the most frequent words in each topic
     feature_names = vectorizer.get_feature_names_out()
     print(Fore.MAGENTA + "\nDiscovered Patterns:" + Style.RESET_ALL)
     print(Fore.BLUE + "-" * 40 + Style.RESET_ALL)
     for topic_idx, topic in enumerate(lda_model.components_):
-        top_words_idx = topic.argsort()[-10:]  # اختيار أفضل 10 كلمات
+        top_words_idx = topic.argsort()[-10:]  # Select top 10 words
         top_words = [feature_names[i] for i in top_words_idx]
         print(f"Pattern {topic_idx + 1}: {', '.join(top_words)}")
     print(Fore.BLUE + "-" * 40 + Style.RESET_ALL)
@@ -201,12 +201,9 @@ def main():
             print(Fore.GREEN + f"\nQuestion history saved to '{filename}'." + Style.RESET_ALL)
             continue
         elif question.lower() == 'load':
-            filename = input(Fore.CYAN + "Enter filename to load the question history from: " + Style.RESET_ALL)
+            filename = input(Fore.CYAN + "Enter filename to load the question history (e.g., history.txt): " + Style.RESET_ALL)
             history = load_history_from_file(filename)
             print(Fore.GREEN + f"\nQuestion history loaded from '{filename}'." + Style.RESET_ALL)
-            continue
-        elif question.lower() == 'view':
-            view_interactions()
             continue
         elif question.lower() == 'analyze':
             analyze_interactions()
@@ -215,21 +212,18 @@ def main():
             new_question = develop_question(history)
             if new_question:
                 question = new_question
-            else:
-                continue
+        
+        answer = get_answer(api_key, question)
+        print(Fore.GREEN + "WormGPT's Answer: " + Style.RESET_ALL + answer)
+        
+        last_question = question
+        last_answer = answer
+        
+        # Add interaction to the database
+        add_interaction(question, answer)
+        
+        # Save to history
+        history.append({"question": question, "answer": answer})
 
-        if question:
-            answer = get_answer(api_key, question)
-            print(Fore.GREEN + "\nAnswer:" + Style.RESET_ALL)
-            print(Fore.MAGENTA + answer + Style.RESET_ALL)
-            print(Fore.BLUE + "-" * 40 + Style.RESET_ALL)
-
-            add_interaction(question, answer)
-            history.append({"question": question, "answer": answer})
-            last_question = question
-            last_answer = answer
-        else:
-            print(Fore.RED + "Please enter a question." + Style.RESET_ALL)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
